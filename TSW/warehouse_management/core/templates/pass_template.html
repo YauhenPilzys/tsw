@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    {% load static %}
+    <style>
+        @page {
+            size: A4 landscape;
+            margin: 0;
+        }
+        body {
+            font-family: 'DejaVu Sans', sans-serif;
+            font-size: 12px;
+            margin: 50px 20px 20px 20px; /* Смещение документа вниз */
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+            width: 50%; /* Занимаем половину страницы */
+            float: left; /* Располагаем слева */
+            margin-left: 70px; /* Смещение вправо на пару пробелов */
+        }
+        h1, h2 {
+            text-align: left;
+            margin: 0;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header img {
+            width: 80px;
+            height: auto;
+            margin-right: 15px;
+        }
+        .info {
+            margin-top: 10px;
+        }
+        .info p {
+            margin: 5px 0;
+        }
+        .rules {
+            text-align: justify;
+            margin-top: 20px;
+        }
+        .signature {
+            margin-top: 40px;
+        }
+        .line {
+            display: inline-block;
+            border-bottom: 1px solid black;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+       <img src="{{ logo_path }}" alt="Логотип">
+        <div>
+            <h1>Пропуск № {{ logbook.id|stringformat:"07d" }}</h1>
+            <p style="margin-bottom: 5px;">на заезд в ЗТК ООО «Алеста-Транзит»</p>
+            <p style="margin-top: 5px;">№ СВ-1601/0000304</p>
+        </div>
+    </div>
+
+    <div class="info">
+        <p><b>Регистрационный номер т/с:</b> {{ logbook.vehicle_number }}</p>
+        <p><b>Дата/время заезда в ЗТК:</b> {{ logbook.datetime_in|date:"d.m.Y H:i:s" }}</p>
+        <p><b>Дата/время выезда из ЗТК:</b>
+            {% if logbook.datetime_out %}
+                {{ logbook.datetime_out|date:"d.m.Y H:i:s" }}
+            {% else %}
+                _______________________
+            {% endif %}
+        </p>
+        <p><b>Место парковки:</b>
+            {% if logbook.place_park and not logbook.place_park.is_available %}
+                {{ logbook.place_park.spot_number }}
+            {% else %}
+                _______________________
+            {% endif %}
+        </p>
+    </div>
+
+    <div class="rules">
+        <p><b>На территории СВХ запрещается:</b></p>
+        <ul>
+            {% for rule in rules %}
+                <li>{{ rule }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="signature">
+        <p>С правилами ОТ и ТБ на территории СВХ ознакомлен:</p>
+        <p>водитель {{ logbook.carrier_info }} <span class="line"></span> подпись водителя</p>
+    </div>
+</body>
+</html>
