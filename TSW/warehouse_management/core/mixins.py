@@ -8,13 +8,49 @@ from .models import *
 import urllib.parse  # Import urllib.parse for URL decoding
 from django.contrib.contenttypes.models import ContentType
 from django.forms.models import model_to_dict
-from .models import ActionLog
 import json
 from django.utils.timezone import now
 from django.db.models import Q
-import logging
 from django.utils.dateparse import parse_datetime
 from django.core.exceptions import ObjectDoesNotExist
+import logging
+
+
+
+# logger = logging.getLogger('request_log')
+#
+# class RequestLogMixin:
+#     """Логирует только GET, POST, PUT, PATCH, DELETE-запросы"""
+#
+#     def list(self, request, *args, **kwargs):  # GET (список объектов)
+#         response = super().list(request, *args, **kwargs)
+#         logger.info(f"GET /{request.path} → {request.user}")
+#         return response
+#
+#     def retrieve(self, request, *args, **kwargs):  # GET (один объект)
+#         response = super().retrieve(request, *args, **kwargs)
+#         logger.info(f"GET /{request.path} (ID {kwargs.get('pk')}) → {request.user}")
+#         return response
+#
+#     def create(self, request, *args, **kwargs):  # POST (создание объекта)
+#         response = super().create(request, *args, **kwargs)
+#         logger.info(f"POST /{request.path} → {request.user}")
+#         return response
+#
+#     def update(self, request, *args, **kwargs):  # PUT (обновление объекта)
+#         response = super().update(request, *args, **kwargs)
+#         logger.info(f"PUT /{request.path} (ID {kwargs.get('pk')}) → {request.user}")
+#         return response
+#
+#     def partial_update(self, request, *args, **kwargs):  # PATCH (частичное обновление объекта)
+#         response = super().partial_update(request, *args, **kwargs)
+#         logger.info(f"PATCH /{request.path} (ID {kwargs.get('pk')}) → {request.user}")
+#         return response
+#
+#     def destroy(self, request, *args, **kwargs):  # DELETE (удаление объекта)
+#         response = super().destroy(request, *args, **kwargs)
+#         logger.info(f"DELETE /{request.path} (ID {kwargs.get('pk')}) → {request.user}")
+#         return response
 
 
 
@@ -26,7 +62,10 @@ class MultiFieldFilterMixin:
     filter_fields = []  # Поля для частичного поиска
     exact_filter_fields = []  # Поля для точного поиска
 
-    def filter_by_fields(self, request):
+    def filter_by_fields(self, request, queryset=None):
+        if queryset is None:
+            queryset = self.get_queryset()  # Используется только если явно не передан queryset
+
         filters = Q()  # Используем Q для сложных фильтров
 
         # Частичный поиск
@@ -41,8 +80,6 @@ class MultiFieldFilterMixin:
             if value:
                 filters &= Q(**{field: value})  # Точный фильтр
 
-        queryset = self.get_queryset()
-
         if filters:
             queryset = queryset.filter(filters)
 
@@ -55,7 +92,7 @@ class AuditLogMixin:
     Миксин для автоматического логирования действий пользователя.
     """
 
-    def log_action(self, user, obj=None, description=None, action_user=None):
+    def log_action(self, user, action, obj=None, description=None, action_user=None):
         """
         Логирует действие пользователя.
         """
@@ -63,17 +100,18 @@ class AuditLogMixin:
         object_id = obj.id if obj else None
         UserActionLog.objects.create(
             user=user,
+            action=action,
             content_type=content_type,
             object_id=object_id,
             description=description,
             action_user=action_user
         )
 
-    def log_action_from_request(self, obj=None, description=None, action_user=None):
+    def log_action_from_request(self, action, obj=None, description=None, action_user=None):
         """
         Упрощенный метод для логирования действия с текущим пользователем из запроса.
         """
-        self.log_action(self.request.user, obj, description, action_user)
+        self.log_action(self.request.user, action, obj, description, action_user)
 
     def perform_update(self, serializer):
         """
@@ -82,6 +120,7 @@ class AuditLogMixin:
         obj = self.get_object()
         updated_obj = serializer.save()
         self.log_action_from_request(
+            "update",  # Передаем action
             updated_obj,
             f"Обновлен объект {updated_obj}",
             action_user=f"Пользователь id={self.request.user.id} обновил объект id={updated_obj.id}"
@@ -94,6 +133,7 @@ class AuditLogMixin:
         """
         obj = serializer.save()
         self.log_action_from_request(
+            "create",  # Передаем action
             obj,
             f"Создан объект {obj}",
             action_user=f"Пользователь id={self.request.user.id} создал объект id={obj.id}"
@@ -105,6 +145,7 @@ class AuditLogMixin:
         Логирование удаления объекта.
         """
         self.log_action_from_request(
+            "delete",  # Передаем action
             instance,
             f"Удален объект {instance}",
             action_user=f"Пользователь id={self.request.user.id} удалил объект id={instance.id}"

@@ -30,6 +30,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -42,8 +44,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',
-
-
 ]
 
 MIDDLEWARE = [
@@ -137,7 +137,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'warehouse_management.wsgi.application'
 
-
+DATABASE_ROUTERS = ['core.routers.SecondDBRouter']
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
@@ -151,9 +151,33 @@ DATABASES = {
         'HOST': '127.0.0.1',
         'PORT': '3306',
         'OPTIONS': {'charset': 'utf8mb4'},
-    }
+    },
 
+    'second_db': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'alestadbuv',
+        'USER': 'mysqluser',
+        'PASSWORD': '210368',
+        'HOST': '178.168.146.118',
+        'PORT': '3305',
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            # 'ssl_mode': 'DISABLED',    # Полностью отключить SSL
+        },
+    },
 }
+
+
+# Настройки FTP
+FTP_SETTINGS = {
+    "HOST": "178.168.146.109",  # Хост
+    "PORT": 21,                 # Порт
+    "USERNAME": "alestaftp",    # Логин
+    "PASSWORD": "123456_qaz",   # Пароль
+    "USE_PASSIVE_MODE": True    # True для пассивного режима, False для активного
+}
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -227,11 +251,16 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'core.paginations.AllOtherAPIListPagination',
     'PAGE_SIZE': 50,
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.FormParser',
+    ],
 }
 
 
 
-
+#
 # LOGGING = {
 #     'version': 1,
 #     'disable_existing_loggers': False,
@@ -245,15 +274,20 @@ REST_FRAMEWORK = {
 #         'file': {
 #             'level': 'INFO',
 #             'class': 'logging.FileHandler',
-#             'filename': 'user_actions.log',
+#             'filename': os.path.join(BASE_DIR, 'logs.log'),
 #             'formatter': 'verbose',
 #         },
 #     },
 #     'loggers': {
-#         'audit': {
+#         'django': {
 #             'handlers': ['file'],
 #             'level': 'INFO',
 #             'propagate': True,
+#         },
+#         'request_log': {
+#             'handlers': ['file'],
+#             'level': 'INFO',
+#             'propagate': False,
 #         },
 #     },
 # }

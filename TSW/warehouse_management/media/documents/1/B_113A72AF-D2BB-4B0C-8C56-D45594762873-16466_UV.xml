@@ -1,0 +1,65 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<UVD_ZTK xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Declarant ID="113A72AF-D2BB-4B0C-8C56-D45594762873">
+    <INFO_D>
+      <DOCID>1</DOCID>
+      <NOM_LIC>СВ-1601/0000304</NOM_LIC> номер свх
+      <NOMU>000001</NOMU> номер уведомления
+      <YEARREG>4</YEARREG> автоматически выставляется год одной цифрой
+      <JOURN>9</JOURN> автоматически выставялется журнал
+      <NAPRAVL>2</NAPRAVL>
+      <PR_TOV>Т</PR_TOV>
+      <PR_STZ>0</PR_STZ> автоматически 
+    </INFO_D>
+    <G_A>
+      <DATEU>09.12.2024</DATEU> дата
+      <TIMEU>15:20:14</TIMEU> время
+      <NUMBERU>СВ-1601/0000304/49000001</NUMBERU> номер свх
+      <UNP>591489147</UNP> УНП наш
+      <FIO_ZL>МАРТИНКЕВИЧ СЕРГЕЙ АНАТОЛЬЕВИЧ</FIO_ZL> фио ответственного
+    </G_A>
+    <G01_N>
+      <VES_BR>4818.00</VES_BR>  вес брутто
+      <CELL>03</CELL> цель перемещения наверное
+      <G01>
+        <TR_NOMER>T904CH05</TR_NOMER> номер т/с
+        <TR_TYPE>307</TR_TYPE> тип т/с
+        <REG_COUNTRY>RU</REG_COUNTRY> страна регистрации т/с
+      </G01>
+      <G01>
+        <TR_NOMER>AY750578</TR_NOMER> номер прицепа
+        <TR_TYPE>319</TR_TYPE> тип прицепа
+        <REG_COUNTRY>RU</REG_COUNTRY> страна регистрации
+      </G01>
+      <G01>
+        <TR_NOMER>LCLU8027225</TR_NOMER> номер прицепа
+        <TR_TYPE>901</TR_TYPE> тип прицепа
+        <REG_COUNTRY>00</REG_COUNTRY> страна регистрации
+      </G01>
+    </G01_N>
+    <G02>
+      <KOD_DOC>02015</KOD_DOC> тип документа
+      <NOM_DOC>809</NOM_DOC> номер документа
+      <DATE_DOC>2024-12-03</DATE_DOC>дата документа
+    </G02>
+    <G02>
+      <KOD_DOC>04021</KOD_DOC> тип документа
+      <NOM_DOC>LCLU8027225</NOM_DOC> номер документа
+      <DATE_DOC>2024-11-19</DATE_DOC> дата документа
+    </G02>
+    <G02>
+      <KOD_DOC>09013</KOD_DOC> тип документа
+      <NOM_DOC>10216120/081224/5017672</NOM_DOC> номер документа
+      <DATE_DOC>2024-12-08</DATE_DOC> дата документа
+    </G02>
+    <G02>
+      <KOD_DOC>02011</KOD_DOC> тип документа
+      <NOM_DOC>VIC2423RS066</NOM_DOC> номер документа
+      <DATE_DOC>2024-11-19</DATE_DOC> дата документа
+    </G02>
+    <G03>
+      <G082>КАЗЕВРО ТРАК ТОО</G082> получатель
+      <G083>KZ</G083> страна регистрации
+    </G03>
+  </Declarant>
+</UVD_ZTK>

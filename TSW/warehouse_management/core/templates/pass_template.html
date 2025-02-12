@@ -11,15 +11,15 @@
         body {
             font-family: 'DejaVu Sans', sans-serif;
             font-size: 12px;
-            margin: 50px 20px 20px 20px; /* Смещение документа вниз */
+            margin: 30px 20px 20px 20px; /* Уменьшаем отступ сверху */
             padding: 0;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             height: 100%;
-            width: 50%; /* Занимаем половину страницы */
-            float: left; /* Располагаем слева */
-            margin-left: 70px; /* Смещение вправо на пару пробелов */
+            width: 40%;
+            float: left;
+            margin-left: 70px;
         }
         h1, h2 {
             text-align: left;
@@ -28,7 +28,7 @@
         .header {
             display: flex;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
         .header img {
             width: 80px;
@@ -36,28 +36,42 @@
             margin-right: 15px;
         }
         .info {
-            margin-top: 10px;
+            margin-top: 5px;
         }
         .info p {
-            margin: 5px 0;
+            margin: 3px 0;
         }
         .rules {
             text-align: justify;
-            margin-top: 20px;
+            margin-top: 15px;
         }
         .signature {
-            margin-top: 40px;
+            margin-top: 30px;
+        }
+        .signature-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 10px; /* Увеличенный отступ для смещения линии вниз */
+            width: 200px;
         }
         .line {
-            display: inline-block;
-            border-bottom: 1px solid black;
             width: 200px;
+            border-bottom: 1px solid black;
+            margin-top: 10px; /* Двигаем линию вниз на два пробела */
+            margin-bottom: 2px;
+        }
+        .signature-text {
+            font-size: 10px;
+            text-align: center;
+            width: 100%;
+            margin-top: 2px;
         }
     </style>
 </head>
 <body>
     <div class="header">
-       <img src="{{ logo_path }}" alt="Логотип">
+        <img src="{{ logo_path }}" alt="Логотип">
         <div>
             <h1>Пропуск № {{ logbook.id|stringformat:"07d" }}</h1>
             <p style="margin-bottom: 5px;">на заезд в ЗТК ООО «Алеста-Транзит»</p>
@@ -66,7 +80,13 @@
     </div>
 
     <div class="info">
-        <p><b>Регистрационный номер т/с:</b> {{ logbook.vehicle_number }}</p>
+        <p><b>Регистрационный номер т/с:</b>
+            {% if logbook.trailer_number %}
+                {{ logbook.vehicle_number }} / {{ logbook.trailer_number }}
+            {% else %}
+                {{ logbook.vehicle_number }}
+            {% endif %}
+        </p>
         <p><b>Дата/время заезда в ЗТК:</b> {{ logbook.datetime_in|date:"d.m.Y H:i:s" }}</p>
         <p><b>Дата/время выезда из ЗТК:</b>
             {% if logbook.datetime_out %}
@@ -95,7 +115,11 @@
 
     <div class="signature">
         <p>С правилами ОТ и ТБ на территории СВХ ознакомлен:</p>
-        <p>водитель {{ logbook.carrier_info }} <span class="line"></span> подпись водителя</p>
+        <p>водитель {{ logbook.carrier_info }}</p>
+        <div class="signature-box">
+            <div class="line"></div>
+            <p class="signature-text">подпись водителя</p>
+        </div>
     </div>
 </body>
 </html>

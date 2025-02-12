@@ -1,14 +1,31 @@
 from rest_framework import serializers
 from .models import *
 from django.utils.timezone import localtime
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        #  Добавляем данные пользователя в токен
+        data['id'] = self.user.id
+        data['username'] = self.user.username
+        data['first_name'] = self.user.first_name
+        data['last_name'] = self.user.last_name
+
+        return data
 
 
 # Пользователь
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['password', 'username', 'first_name', 'last_name', 'is_staff', 'is_active', 'is_superuser']
-        read_only_fields = ['id', ]
+        fields = ['id', 'username', 'password', 'first_name', 'last_name', 'is_staff', 'is_active', 'is_superuser']
 
 
 # Склад временного хранения
@@ -98,17 +115,33 @@ class LogBookDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'  # Поля, которые мы хотим отобразить для GET-запроса
 
 
+# Прикрепленные файлы для таблицы Document
+class DocumentFileSerializer(serializers.ModelSerializer):
+    file_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentFile
+        fields = ['id', 'order', 'file', 'file_name', 'uploaded_at', 'description']
+
+    def get_file_name(self, obj):
+        return obj.get_file_name()
+
+
+
+
 class OrderSerializer(serializers.ModelSerializer):
     """Основной сериализатор для Order"""
-    logbook = serializers.SerializerMethodField()  # Используем метод для обработки поля logbook
+    logbook = serializers.SerializerMethodField()
     seal = serializers.SerializerMethodField()
     seal_quantity = serializers.SerializerMethodField()
     seal_number = serializers.SerializerMethodField()
     notice_id = serializers.SerializerMethodField()
+    username = serializers.CharField(source='user.username', read_only=True)
+    files = DocumentFileSerializer(many=True, read_only=True)
 
     class Meta:
         model = Order
-        fields = '__all__'
+        fields = '__all__'  # Все поля модели Order + дополнительные
 
     def get_logbook(self, obj):
         # Для GET-запросов возвращаем подробный сериализатор LogBook
@@ -188,7 +221,7 @@ class LogBookSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'warehouse',
-            'status', 'carrier_info', 'vehicle_number', 'phone', 'seal', 'seal_quantity', 'seal_number',
+            'status', 'carrier_info', 'vehicle_number', 'trailer_number', 'phone', 'seal', 'seal_quantity', 'seal_number',
             'place_park', 'place_park_id', 'datetime_in', 'datetime_out', 'user_in', 'user_out', 'note', 'note_in', 'note_out'
         ]
         read_only_fields = ['note_out']
@@ -211,7 +244,7 @@ class LogBookCreateSerializer(serializers.ModelSerializer):
         model = LogBook
         fields = [
             'warehouse',
-            'place_park', 'status', 'carrier_info', 'vehicle_number', 'phone', 'seal', 'seal_quantity', 'seal_number',
+            'place_park', 'status', 'carrier_info', 'vehicle_number', 'trailer_number', 'phone', 'seal', 'seal_quantity', 'seal_number',
             'datetime_in', 'note_in', 'note'
         ]
 
@@ -280,13 +313,18 @@ class RecipientSerializer(serializers.ModelSerializer):
         if request and request.method == 'GET':
             representation.pop('notice', None)  # Убираем поле 'notice' из ответа
         return representation
+    
+
+
 
 
 # Транспорт-Уведомление
 class TransportNoticeSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = TransportNotice
-        fields = ['notice', 'number', 'type', 'country']
+        fields = ['id', 'notice', 'number', 'type', 'country']
 
     def create(self, validated_data):
         # Проверяем или создаем транспортное средство
@@ -306,22 +344,28 @@ class TransportNoticeSerializer(serializers.ModelSerializer):
             transport.save()
 
         # Создаем запись в таблице TransportNotice
-        return super().create(validated_data)
+        transport_notice = super().create(validated_data)
+
+        return transport_notice
+
 
 # Уведомление
 class NoticeSerializer(serializers.ModelSerializer):
-    id_notice = serializers.SerializerMethodField()  # Поле id для уведомления
-    docs = DocSerializer(many=True, read_only=True)  # Связанные документы
-    recipient = RecipientSerializer(many=True, read_only=True)  # Связанные получатели
-    transport = serializers.SerializerMethodField()  # Поле для транспорта
+    id_notice = serializers.SerializerMethodField()
+    docs = DocSerializer(many=True, read_only=True)
+    recipient = RecipientSerializer(many=True, read_only=True)
+    transport = serializers.SerializerMethodField()
+    svh_number = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()  # Добавляем поле status
 
     class Meta:
         model = Notice
         fields = [
-            'id_notice', 'date_in', 'time_in', 'order', 'gross_weight',
-            'goods_presence', 'purpose_placement', 'number_out',
+            'id_notice', 'date_in', 'guid', 'time_in', 'order', 'gross_weight',
+            'goods_presence', 'purpose_placement', 'direction_vehicle', 'number_out',
             'notification', 'number_notification', 'zhurnal',
-            'stz', 'year', 'fio', 'docs', 'recipient', 'transport'
+            'stz', 'year', 'fio', 'docs', 'recipient', 'transport',
+            'svh_number', 'status'  # Добавляем status
         ]
         read_only_fields = [
             'id_notice', 'number_out', 'notification', 'number_notification',
@@ -329,22 +373,29 @@ class NoticeSerializer(serializers.ModelSerializer):
         ]
 
     def get_id_notice(self, obj):
-        return obj.id  # Возвращаем значение id уведомления
+        return obj.id
 
     def get_transport(self, obj):
-        """
-        Формируем массив транспорта из таблицы TransportNotice
-        """
         transport_notices = TransportNotice.objects.filter(notice=obj)
         return [
             {
-                "id": tn.id,  # Поле id из TransportNotice
-                "ts": tn.number,  # Поле number из TransportNotice
-                "type_ts": tn.type,  # Поле type из TransportNotice
-                "country": tn.country  # Поле country из TransportNotice
+                "id": tn.id,
+                "ts": tn.number,
+                "type_ts": tn.type,
+                "country": tn.country
             }
             for tn in transport_notices
         ]
+
+    def get_svh_number(self, obj):
+        if obj.order and obj.order.warehouse:
+            return obj.order.warehouse.svh_number or "СВ-1601/0000304"
+        return "СВ-1601/0000304"
+
+    def get_status(self, obj):
+        """Получаем статус из EClient по GUID"""
+        eclient_entry = EClient.objects.using('second_db').filter(guidXML=obj.guid).first()
+        return eclient_entry.status if eclient_entry else "Не найден"
 
 
 class NoticePatchSerializer(serializers.ModelSerializer):
@@ -382,12 +433,12 @@ class NoticePatchSerializer(serializers.ModelSerializer):
         ]
 
 
+
 # Перемещение товара по местам на складе
 class LogPlaceSerializer(serializers.ModelSerializer):
     class Meta:
         model = LogPlace
         fields = '__all__'
-
 
 
 # Транспорт
@@ -397,17 +448,11 @@ class TransportSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-
-
-
-
-# Просмотр логов действий пользователя
-class AuditLogSerializer(serializers.ModelSerializer):
-    action_display = serializers.CharField(source='get_action_display')
-
+# Таблица регистрации с другой БД
+class EClientSerializer(serializers.ModelSerializer):
     class Meta:
-        model = AuditLog
-        fields = ['id', 'action', 'action_display', 'object_id', 'object_repr', 'timestamp']
+        model = EClient
+        fields = '__all__'
 
 
 class UserActionLogSerializer(serializers.ModelSerializer):
@@ -437,5 +482,3 @@ class UserActionLogSerializer(serializers.ModelSerializer):
     def get_formatted_datetime(self, obj):
         # Преобразуем время в локальный часовой пояс (Минск)
         return localtime(obj.datetime).strftime("%Y-%m-%d %H:%M:%S")
-
-

@@ -5,37 +5,16 @@ from .directory import *
 import re
 from datetime import datetime
 from django.contrib.contenttypes.fields import GenericForeignKey
-from django.utils.timezone import now
+from django.utils.timezone import now, localtime
 from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.forms.models import model_to_dict
-from django.utils.timezone import now
 import json
 import uuid
-from django.contrib.auth import get_user_model
-
-
-# Модель на полное логирование
-User = get_user_model()
-
-class AuditLog(models.Model):
-    ACTION_CHOICES = [
-        ('create', 'Создание'),
-        ('update', 'Обновление'),
-        ('delete', 'Удаление'),
-    ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='logs', verbose_name="Пользователь")
-    action = models.CharField(max_length=20, choices=ACTION_CHOICES, verbose_name="Действие")
-    object_id = models.PositiveIntegerField(verbose_name="ID объекта")
-    object_repr = models.CharField(max_length=200, verbose_name="Описание объекта")
-    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Время действия")
-
-    class Meta:
-        verbose_name = "Журнал аудита"
-        verbose_name_plural = "Журналы аудита"
-        ordering = ['-timestamp']
+from django.conf import settings
+import os
+from django.utils import timezone
 
 
 
@@ -252,11 +231,11 @@ class Order(models.Model):
     carrier_name = models.CharField("ФИО водителя", max_length=100)
     phone = models.CharField("Телефон водителя", max_length=20)
     vehicle_number = models.CharField("Номер т/с", max_length=20)
-    supplier = models.ForeignKey('Supplier', blank=False, on_delete=models.DO_NOTHING, verbose_name="Отправитель / Получатель")
+    supplier = models.ForeignKey('Supplier', on_delete=models.DO_NOTHING, verbose_name="Отправитель / Получатель", blank=True, null=True)
     customer = models.CharField("Заказчик", max_length=100, blank=True, null=True)
     status_order = models.CharField("Статус заказа", max_length=2, default='0', choices=STATUS_ORDER)
     datetime = models.DateTimeField("Дата и время заказа")
-    quantity = models.PositiveIntegerField("Количество товара")
+    quantity = models.PositiveIntegerField("Количество партий")
     damage = models.BooleanField("Повреждение груза", default=False)
     damage_description = models.TextField("Описание повреждения", blank=True, null=True)
     user = models.ForeignKey(User, blank=False, on_delete=models.DO_NOTHING, verbose_name="Пользователь", related_name='orders')
@@ -342,7 +321,7 @@ class LogBook(models.Model):
     carrier_info = models.CharField("ФИО водителя", max_length=100)
     phone = models.CharField("телефон водителя", max_length=100)
     vehicle_number = models.CharField("Номер т/с", max_length=100)
-    trailer_number = models.CharField("Номер прицепа", max_length=100)
+    trailer_number = models.CharField("Номер прицепа", max_length=100, blank=True, null=True)
     seal = models.BooleanField("Пломба есть/нет", default=False) # сделано просто булевым
     seal_quantity = models.CharField("Количество пломб", max_length=100, blank=True, null=True)
     seal_number = models.CharField("Номер пломбы", max_length=100, blank=True, null=True)
@@ -417,13 +396,15 @@ class LogBook(models.Model):
 # Таблица уведомлений
 class Notice(models.Model):
     doc_creation_date = models.DateTimeField("Дата и время создания документа", auto_now_add=True)
-    date_in = models.DateField("Дата въезда")  # берем с журнала
-    time_in = models.TimeField("Время въезда")  # берем с журнала
+    date_in = models.DateField("Дата въезда") # берем с журнала
+    time_in = models.TimeField("Время въезда") # берем с журнала
     order = models.ForeignKey('Order', on_delete=models.PROTECT, related_name='notices', verbose_name='Заказ')
     user = models.ForeignKey(User, on_delete=models.DO_NOTHING, related_name='notices', verbose_name='Пользователь')
-    gross_weight = models.FloatField("Вес брутто", default=0)
+    # gross_weight = models.FloatField("Вес брутто")
+    gross_weight = models.DecimalField("Вес брутто", max_digits=10, decimal_places=2, null=True, blank=True)
     goods_presence = models.BooleanField("Наличие товара", default=False)
-    purpose_placement = models.CharField("Цель размещения", max_length=2, choices=PURPOSE_TYPES, default='10')
+    purpose_placement = models.CharField("Цель размещения", max_length=2, choices=PURPOSE_TYPES, default='22')
+    direction_vehicle = models.CharField("Направление т/с", max_length=1, choices=DIRECTION_TYPES, default='2')
     # автоматически формируемые поля
     guid = models.CharField(max_length=36, default=uuid.uuid4, unique=True, verbose_name="GUID номер")
     number_out = models.CharField(max_length=15, verbose_name="Исходящий номер", blank=True, null=True)  # id notice
@@ -432,7 +413,7 @@ class Notice(models.Model):
     zhurnal = models.CharField(max_length=12, verbose_name="Журнал", blank=True, null=True) # автоматически 9
     stz = models.CharField(max_length=1, verbose_name="СТЗ", blank=True, null=True)  # автоматически 0
     year = models.CharField(max_length=12, verbose_name="Год", blank=True, null=True)  # автоматически цифра года
-    unp = models.CharField("УНП компании", max_length=15, editable=False, default="591489147")  # УНП нашей фирмы, значиние дэфолт
+    unp = models.CharField("УНП компании", max_length=15, editable=False, default="591489147")
     fio = models.CharField(
         max_length=100,
         default="Мартинкевич Сергей Анатольевич",
@@ -450,7 +431,7 @@ class Notice(models.Model):
 
 
 
-# Транспорт
+
 class Transport(models.Model):
     ts = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Номер транспортного средства")
     type_ts = models.CharField(max_length=3, blank=True, choices=TYPE_TS, verbose_name="Тип")
@@ -464,7 +445,7 @@ class Transport(models.Model):
     def __str__(self):
         return f'{self.ts}-{self.type_ts}-{self.country}'
 
-# Связь транспорта с уведомлением
+
 class TransportNotice(models.Model):
     notice = models.ForeignKey('Notice', on_delete=models.CASCADE, related_name='transport_notice', verbose_name='Уведомление')
     number = models.CharField("Номер", max_length=100)
@@ -496,26 +477,50 @@ class Doc(models.Model):
         return f"{self.doc_number} от {self.doc_date} ({self.doc_code})"
 
 
-# Действия пользователя - новая таблица для отслеживание логов по пользователям
-# Логирование на каждое действие добавлять лог на пользваоетля что делал!!
-
-class ActionLog(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Пользователь")
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, verbose_name="Тип объекта")
-    object_id = models.PositiveIntegerField(verbose_name="ID объекта")
-    action = models.CharField("Действие", max_length=100)
-    before_state = models.JSONField("Состояние до", blank=True, null=True)
-    after_state = models.JSONField("Состояние после", blank=True, null=True)
-    datetime = models.DateTimeField("Дата и время действия", default=now)
+class DocumentFile(models.Model):
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, verbose_name="Заказ", related_name='files')
+    file = models.FileField(upload_to='documents/', verbose_name="Файл")
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата загрузки")
+    description = models.TextField(blank=True, null=True, verbose_name="Описание файла")
 
     class Meta:
-        verbose_name = "Лог действия"
-        verbose_name_plural = "Логи действий"
+        verbose_name = "Файл документа"
+        verbose_name_plural = "Файлы документов"
+
+
+    # Сохранение файлов а папке media/documents/notice_id
+    def save(self, *args, **kwargs):
+        folder_path = os.path.join('documents', str(self.order.id))
+        absolute_folder_path = os.path.join(settings.MEDIA_ROOT, folder_path)
+        os.makedirs(absolute_folder_path, exist_ok=True)
+        self.file.field.upload_to = folder_path
+        super().save(*args, **kwargs)
+
+    def get_file_name(self):
+        return os.path.basename(self.file.name)
+
+
+
+
+# Получатель
+class Recipient(models.Model):
+    notice = models.ForeignKey('Notice', on_delete=models.CASCADE, verbose_name="Уведомление", related_name='recipient')
+    name = models.CharField("Наименование", max_length=255)
+    country = models.CharField("Страна", max_length=2)
+
+    class Meta:
+        verbose_name = "Получатель"
+        verbose_name_plural = "Получатели"
 
     def __str__(self):
-        return f"{self.user.username} - {self.action} ({self.datetime})"
+        return f"{self.name} ({self.country})"
 
 
+
+
+ # Таблица на логи
+# Действия пользователя - новая таблица для отслеживание логов по пользователям
+# Логирование на каждое действие добавлять лог на пользваоетля что делал!!
 class UserActionLog(models.Model):
     ACTION_TYPES = [
         ('create', 'Создание'),
@@ -540,38 +545,33 @@ class UserActionLog(models.Model):
         return f"{self.user} - {self.get_action_display()} ({self.datetime})"
 
 
-# Получатель
-class Recipient(models.Model):
-    notice = models.ForeignKey('Notice', on_delete=models.CASCADE, verbose_name="Уведомление", related_name='recipient')
-    name = models.CharField("Наименование", max_length=255)
-    country = models.CharField("Страна", max_length=2)
+
+
+# Таблица регистраций со встрой БД, данные для заполнения берем с уведомлений
+class EClient(models.Model):
+    ideclient = models.AutoField(primary_key=True) # Первичный ключ (автоинкремент)
+    regN_TS = models.CharField(max_length=25)      # Регистрационный номер ТС
+    regN_DOK = models.CharField(max_length=45)     # Регистрационный номер документа
+    countKod = models.IntegerField()               # Код количества - 0 всегда
+    guidXML = models.CharField(max_length=42)      # GUID XML
+    lc = models.DateTimeField(default=now)
+    # lc = models.DateTimeField(auto_now_add=True)   # дата и время автоматически должно ставится
+    id_us = models.IntegerField()                  # id usera будет всегда 68!
+    id_z = models.IntegerField()                   # ID со своей таблицы order
+    tip = models.IntegerField()                    # Тип регистрации - 4  ( уведомление )
+    status = models.CharField(max_length=50)       # Статус сразу 0 - ставим "ожидание отправки", остальное присваиваться на регистрации
+    regID = models.CharField(max_length=15)        # Номер регистрации
+    numbEPI = models.CharField(max_length=100)     # Номер EPI
+    statID = models.IntegerField()                 # ID статуса
+    postIN = models.CharField(max_length=10)       # пост таможни наш 16466
+    razr = models.CharField(max_length=45)         # Разрешение (всегда пусто)
+    id_xmlf = models.IntegerField()                # ID XML файла (всегда 0 )
+
+    def get_local_lc(self):
+        """Возвращает lc в локальном часовом поясе"""
+        return localtime(self.lc)  # Преобразует UTC в Europe/Minsk
 
     class Meta:
-        verbose_name = "Получатель"
-        verbose_name_plural = "Получатели"
-
-    def __str__(self):
-        return f"{self.name} ({self.country})"
-
-
-
-
-
-# Заказчик - таблица на будущее, потому что в Order поле customer стоит charfield Необязательное
-# class Сustomer(models.Model):
-#     name = models.CharField(max_length=200, blank=False, verbose_name="Наименование")  #
-#     unp = models.CharField(max_length=12, verbose_name="УНП", blank=False, )  #
-#     note = models.CharField(max_length=300, null=True, blank=True, verbose_name="примечание")  #
-#     contract_number = models.CharField(max_length=200, verbose_name="Номер контракта", null=True, blank=True, )  #
-#     contract_date = models.DateField(verbose_name="дата контракта", null=True, blank=True, )  #
-#     e_mail = models.EmailField(verbose_name="электронная почта", null=True, blank=True, )  #
-#     adress = models.CharField(max_length=2500, verbose_name="адрес+банковские реквизиты", null=True, blank=True, )  # тут же все банковские данные
-#     arch = models.BooleanField(blank=False, default=False, verbose_name="Архивный", null=True, )  # архивный или нет
-#     lang = models.CharField(max_length=80, choices=LANG, default='ru', verbose_name="Язык", null=True, blank=True, )  # язык клиента
-#
-#     class Meta:
-#         verbose_name = 'Заказчик'
-#         verbose_name_plural = 'Заказчики'
-#
-#     def __str__(self):
-#         return f'{self.name} ({self.unp}) контракт: {self.contract_number} от {self.contract_date}, адрес: {self.adress}'
+        managed = False  # Django не будет управлять структурой таблицы
+        db_table = 'eclient'  # Имя таблицы в базе данных
+        app_label = 'core'

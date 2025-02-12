@@ -43,11 +43,16 @@ router.register(r'suppliers', SupplierViewSet, basename='suppliers')
 router.register(r'log-books', LogBookViewSet, basename='log-books')
 router.register(r'notices', NoticeViewSet, basename='notices')
 router.register(r'docs', DocViewSet, basename='doc')
+router.register(r'document-files', DocumentFileViewSet, basename='document-file')
 router.register(r'log-places', LogPlaceViewSet, basename='log-place')
 router.register(r'recipients', RecipientViewSet, basename='recipient')
 router.register(r'transports', TransportViewSet, basename='transport')
 router.register(r'transport-notice', TransportNoticeViewSet, basename='transport-notice')
 router.register(r'user-actions', UserActionLogViewSet, basename='user-action-log')
+router.register(r'eclients', EClientViewSet, basename='eclient')
+
+
+
 
 
 
@@ -66,16 +71,22 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v1/', include(router.urls)),  # Подключение маршрутов из DefaultRouter
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/v1/', include(router.urls)),
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('pass/<int:logbook_id>/', generate_pass_pdf, name='generate_pass_pdf'),
     path('api/v1/directories/<str:directory_name>/', DirectoryView.as_view(), name='directory'),
     path('notices/<int:notice_id>/download_xml/', download_notice_xml, name='download_notice_xml'),
+    path('send-xml/<int:pk>/', SendXMLFile.as_view(), name='send_xml'),
+    path('check-status/<int:pk>/', CheckEClientStatus.as_view(), name='check-eclient-status'),
+    path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    path('proxy/registration/<str:guid>/', get_registration_info, name='get_registration_info'),
+    path('proxy/files/<str:guid>/', get_file_list, name='get_file_list'),
+    # path('proxy/files/<int:id_reg>/', get_file_list, name='get_file_list'),
+    path('proxy/file/<int:file_id>/', get_file, name='get_file'),
 
-    # path('api/v1/xmldownload/<int:pk>', GetXMLFile.as_view(), name='xmldownload'),  # скачать xml файл по определенному заказу
 
 ]
 
