@@ -15,7 +15,11 @@ import uuid
 from django.conf import settings
 import os
 from django.utils import timezone
-
+import barcode
+from barcode.writer import ImageWriter
+from io import BytesIO
+from django.core.files.base import ContentFile
+import random
 
 
 
@@ -88,40 +92,111 @@ class Ramp(models.Model):
         return f"{self.description} - {self.get_status_ramp_display()}"
 
 
+# Закзачик ( клиент ) - есть поле charfield в таблице ORDER
+# class Customer(models.Model):
+#     name = models.CharField("Название перевозчика", max_length=255)
+#     contact_info = models.CharField("Контактная информация", max_length=255, blank=True, null=True)
+#
+#     def __str__(self):
+#         return self.name
+
+
 # Товар
 class Product(models.Model):
-    place = models.ForeignKey('Place', on_delete=models.CASCADE, related_name='products', verbose_name='Место хранения')
-    sku = models.CharField("Код товара", max_length=100)
+    pallet = models.ForeignKey('Pallet', on_delete=models.SET_NULL, related_name='products', null=True, blank=True)
+    place = models.ForeignKey('Place', on_delete=models.CASCADE, related_name='products', null=True, blank=True)
+    sku_product = models.CharField("Штрихкод EAN-13", max_length=13, unique=True, blank=True, null=True)
+    barcode_image = models.ImageField(upload_to='barcodes/', blank=True, null=True)
+    code_product = models.CharField("Код товара с документа (CMR/INVOICE)", max_length=100)
     type_product = models.CharField("Тип товара", max_length=100)
     description = models.TextField("Описание товара", blank=True, null=True)
     net_weight = models.DecimalField("Вес нетто", max_digits=10, decimal_places=2)
     gross_weight = models.DecimalField("Вес брутто", max_digits=10, decimal_places=2)
     quantity = models.IntegerField("Количество")
-    barcode = models.CharField("Штрихкод", max_length=100)
-    quantity_pack = models.IntegerField("Количество паллет (упаковок)")
-    datetime_in = models.DateTimeField("Время прибытия товара")
+    quantity_dispatched = models.IntegerField("Отгружено", default=0)
+    # customer = models.ForeignKey('customer', on_delete=models.SET_NULL, related_name='products', null=True,  blank=True)  # Заказчик ( таблица отдельная)
+    # carrier = models.ForeignKey('Carrier', on_delete=models.SET_NULL, related_name='products', null=True, blank=True)  # Перевозчик ??? есть в журнале
+    doc = models.ForeignKey('Doc', on_delete=models.SET_NULL, related_name='products', null=True, blank=True, verbose_name="DOC")
+    # recipient = models.ForeignKey('Recipient', on_delete=models.SET_NULL, related_name='products', null=True, blank=True)   # Связь с получателем ??? есть таблица
+    notice = models.ForeignKey('Notice', on_delete=models.SET_NULL, related_name='products', null=True, blank=True)
+    status = models.CharField("Статус", max_length=50, choices=STATUS_PRODUCT, default='Ожидает приемки')
+    datetime_in = models.DateTimeField("Время прибытия товара", blank=True, null=True)
     datetime_out = models.DateTimeField("Время убытия товара", blank=True, null=True)
-    size = models.CharField("Размеры товара", max_length=100, blank=True, null=True)
-    note = models.TextField("Примечание", blank=True, null=True)
 
     class Meta:
         verbose_name = "Товар"
         verbose_name_plural = "Товары"
 
     def __str__(self):
-        return self.sku
+        return f"{self.sku_product} - {self.type_product}"
+
+
+    # Создание штрихкода. В админке вводится в ручную, в API автоматиечески. Генерация исключительно цифры
+    def generate_ean13(self):
+        base_code = f"{self.code_product}{int(time.time())}"[-13:]  # Уникальный код
+        ean = barcode.get('ean13', base_code, writer=ImageWriter())
+        buffer = BytesIO()
+        ean.write(buffer)
+        self.barcode_image.save(f'barcode_ean13_{base_code}.png', File(buffer), save=False)
+        self.sku_product = base_code
+        buffer.close()
+
+    def save(self, *args, **kwargs):
+        if not self.pallet:  # Если товара нет на паллете – генерируем штрихкод
+            if not self.sku_product:
+                self.generate_ean13()
+        else:
+            self.sku_product = None  # Если товар на паллете, штрихкод не нужен
+
+        super().save(*args, **kwargs)
 
 
 
+# Таблица паллетов если мы используем штрихкод для паллетированного груза
+class Pallet(models.Model):
+    place = models.ForeignKey('Place', on_delete=models.CASCADE, related_name='pallets')
+    sku_pallet = models.CharField("Штрихкод ITF-14", max_length=14, unique=True)
+    barcode_image = models.ImageField(upload_to='barcodes/', blank=True, null=True)
+    description = models.CharField("Описание", max_length=255, blank=True, null=True)
+    datetime_in = models.DateTimeField("Время прибытия")
+    datetime_out = models.DateTimeField("Время убытия", blank=True, null=True)
+    current_weight = models.DecimalField("Текущий вес (кг)", max_digits=10, decimal_places=2, default=0)
+    note = models.TextField("Примечание", blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Паллет"
+        verbose_name_plural = "Паллеты"
+
+    def __str__(self):
+        return self.sku_pallet
+
+    # Создание штрихкода. В админке вводится в ручную, в API автоматиечески. Генерация исключительно цифры
+
+    def generate_itf14(self):
+        base_code = ''.join([str(random.randint(0, 9)) for _ in range(14)])  # Генерация 14-значного кода
+        itf = barcode.get('itf', base_code, writer=ImageWriter())
+        buffer = BytesIO()
+        itf.write(buffer)
+        self.barcode_image.save(f'barcode_itf14_{base_code}.png', ContentFile(buffer.getvalue()), save=False)
+        return base_code
+
+    def save(self, *args, **kwargs):
+        if not self.sku_pallet:  # Проверяем, есть ли код, если нет - генерируем
+            self.sku_pallet = self.generate_itf14()  # Генерируем и сохраняем код
+        super().save(*args, **kwargs)
 
 # Перемещение товара по местам
 class LogPlace(models.Model):
-    product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='log_places', verbose_name='Товар')
+    product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='log_places', verbose_name='Товар', null=True, blank=True)
+    pallet = models.ForeignKey('Pallet', on_delete=models.CASCADE, related_name='log_places', verbose_name='Паллет', null=True, blank=True)
     place_from = models.ForeignKey('Place', on_delete=models.SET_NULL, null=True, blank=True, related_name='log_places_from', verbose_name="Место откуда")
     place_to = models.ForeignKey('Place', on_delete=models.CASCADE, related_name='log_places_to', verbose_name="Место куда")
-    quantity = models.PositiveIntegerField("Количество перемещаемого товара")
+    quantity = models.PositiveIntegerField("Количество перемещаемого товара/паллета")
+    weight = models.DecimalField("Вес (кг)", max_digits=10, decimal_places=2, blank=True, null=True)
     datetime = models.DateTimeField("Дата и время перемещения", auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='log_places', verbose_name="Пользователь")
+    barcode_type = models.CharField("Тип штрихкода", max_length=10, choices=[('EAN-13', 'EAN-13'), ('ITF-14', 'ITF-14')], default='EAN-13')
+    status = models.CharField("Статус", max_length=50, choices=STATUS_PRODUCT, default='Перемещено')
     note = models.TextField("Примечание", blank=True, null=True)
 
     class Meta:
@@ -158,8 +233,8 @@ class Place(models.Model):
 #Описание места
 class TypePlace(models.Model):
     description = models.TextField("Описание")
-    max_weight = models.DecimalField("Максимальный вес", max_digits=10, decimal_places=2)
-    max_size = models.CharField("Максимальный размер", max_length=100)
+    max_weight = models.DecimalField("Максимальный вес (кг)", max_digits=10, decimal_places=2)
+    max_size = models.CharField("Максимальный размер (кг)", max_length=100)
     type_product = models.CharField("Тип товара", max_length=100)
     type_place = models.CharField("Тип места (европаллет и тд)", max_length=100)
     note = models.TextField("Примечание", blank=True, null=True)
@@ -170,6 +245,7 @@ class TypePlace(models.Model):
 
     def __str__(self):
         return self.type_place
+
 
 
 # Заказ услуги
@@ -228,10 +304,10 @@ class Order(models.Model):
     warehouse = models.ForeignKey('Warehouse', on_delete=models.CASCADE, related_name='orders', verbose_name='Склад')
     transport_type = models.CharField("Тип транспорта", max_length=1, choices=TRANSPORT_TYPE_CHOICES,
                                       default='A')
-    carrier_name = models.CharField("ФИО водителя", max_length=100)
+    carrier_name = models.CharField("ФИО водителя (перевозчик)", max_length=100)
     phone = models.CharField("Телефон водителя", max_length=20)
     vehicle_number = models.CharField("Номер т/с", max_length=20)
-    supplier = models.ForeignKey('Supplier', on_delete=models.DO_NOTHING, verbose_name="Отправитель / Получатель", blank=True, null=True)
+    supplier = models.ForeignKey('Supplier', on_delete=models.DO_NOTHING, verbose_name="Отправитель / Получатель (Поставщик)", blank=True, null=True)
     customer = models.CharField("Заказчик", max_length=100, blank=True, null=True)
     status_order = models.CharField("Статус заказа", max_length=2, default='0', choices=STATUS_ORDER)
     datetime = models.DateTimeField("Дата и время заказа")
@@ -296,7 +372,7 @@ class PlacePark(models.Model):
         return f"Парковка {self.parking.description} - Место {self.spot_number}"
 
 
-# Поставщик
+# Поставщик ( заказчик / получатель )
 class Supplier(models.Model):
     name = models.CharField("Название", max_length=100)
     address = models.TextField("Адрес", blank=True, null=True)

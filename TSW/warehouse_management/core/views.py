@@ -60,7 +60,35 @@ from django.db import transaction
 from django.utils.dateparse import parse_date
 from django.db.models import Q
 from django.utils.timezone import make_aware, utc
+from openpyxl import Workbook
+from openpyxl.styles import Font, Border, Side, PatternFill
+
+from collections import defaultdict
+
 User = get_user_model()
+
+
+# # Скачивание штрихкода в PDF для товара и паллеты
+# # GET /api/v1/label/<id>/generate-pdf/
+# class LabelViewSet(viewsets.ViewSet):
+#     @action(detail=True, methods=['get'], url_path='generate-pdf')
+#     def generate_pdf_label(self, request, pk=None):
+#         try:
+#             product = Product.objects.get(pk=pk)
+#         except Product.DoesNotExist:
+#             return Response({"error": "Товар не найден"}, status=status.HTTP_404_NOT_FOUND)
+#
+#         response = HttpResponse(content_type='application/pdf')
+#         response['Content-Disposition'] = f'attachment; filename="label_{product.sku_product}.pdf"'
+#
+#         p = canvas.Canvas(response, pagesize=A4)
+#         p.drawString(20 * mm, 270 * mm, f'Товар: {product.type_product}')
+#         p.drawString(20 * mm, 260 * mm, f'SKU: {product.sku_product}')
+#         if product.barcode_image:
+#             p.drawImage(product.barcode_image.path, 20 * mm, 200 * mm, width=80 * mm, height=80 * mm)
+#         p.showPage()
+#         p.save()
+#         return response
 
 #http://178.168.146.114:8770/reset-password/
 # {
@@ -234,6 +262,7 @@ def download_notice_xml(request, notice_id):
 
 
 
+
 # Запрос на создание пропуска на заезд
 # http://127.0.0.1:8000/pass/1/ - 1 - id logbook
 def generate_pass_pdf(request, logbook_id):
@@ -299,12 +328,190 @@ class WarehouseViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
+
+    # Запрос на скачивание exel по дате в таблице warehouse. Сделана тестовая для проверки в проекте БУХ
+    # http://127.0.0.1:8000/api/v1/warehouses/export_warehouse_to_excel/?start_date=2025-01-01&end_date=2025-02-14
+    @action(detail=False, methods=['get'])
+    def export_warehouse_to_excel(self, request):
+        try:
+            warehouses = Warehouse.objects.all()
+
+            response_data = []
+            for warehouse in warehouses:
+                response_data.append({
+                    "name": warehouse.name,
+                    "svh_number": warehouse.svh_number,
+                    "address": warehouse.address,
+                    "note": warehouse.note,
+                    "customs_post": warehouse.customs_post,
+                    "name_post": warehouse.name_post,
+                })
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Warehouse Report"
+
+            sheet.column_dimensions['A'].width = 30
+            sheet.column_dimensions['B'].width = 20
+            sheet.column_dimensions['C'].width = 30
+            sheet.column_dimensions['D'].width = 40
+            sheet.column_dimensions['E'].width = 20
+            sheet.column_dimensions['F'].width = 20
+
+            bold_font = Font(bold=True)
+            thin_border = Border(left=Side(style='medium'), right=Side(style='medium'), top=Side(style='medium'),
+                                 bottom=Side(style='medium'))
+            gray_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+            white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+
+            headers = ["Название склада", "Номер СВХ", "Адрес", "Примечание", "Номер поста таможни", "Название поста"]
+            for col_num, header in enumerate(headers, 1):
+                cell = sheet.cell(row=1, column=col_num, value=header)
+                cell.font = bold_font
+                cell.border = thin_border
+
+            for row_num, data in enumerate(response_data, start=2):
+                fill = gray_fill if row_num % 2 == 0 else white_fill
+
+                for col_num, value in enumerate(data.values(), 1):
+                    cell = sheet.cell(row=row_num, column=col_num, value=value)
+                    cell.border = thin_border
+                    cell.fill = fill
+
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="warehouse_report.xlsx"'
+            workbook.save(response)
+            return response
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
 # Товар
 class ProductViewSet(ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     pagination_class = AllOtherAPIListPagination
     permission_classes = [IsAuthenticated]
+
+    # Поиск товара по штрихкоду
+    # GET /api/v1/products/by-barcode/{штрихкод}
+    @action(detail=False, methods=['get'], url_path='by-barcode/(?P<barcode>[^/.]+)')
+    def get_by_barcode(self, request, barcode=None):
+        product = Product.objects.filter(sku_product=barcode).first()
+        if product:
+            serializer = self.get_serializer(product)
+            return Response(serializer.data)
+        return Response({'error': 'Товар не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Скачивание в PDF штрихкода товара
+    # http://127.0.0.1:8000/api/v1/products/1/generate-pdf/
+    @action(detail=True, methods=['get'], url_path='generate-pdf')
+    def generate_pdf_label_product(self, request, pk=None):
+        product = self.get_object()
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="label_product_{product.sku_product}.pdf"'
+
+        p = canvas.Canvas(response, pagesize=A4)
+        p.drawString(20 * mm, 270 * mm, f'Товар: {product.type_product}')
+        p.drawString(20 * mm, 260 * mm, f'SKU: {product.sku_product}')
+        if product.barcode_image:
+            p.drawImage(product.barcode_image.path, 20 * mm, 200 * mm, width=80 * mm, height=80 * mm)
+        p.showPage()
+        p.save()
+        return response
+
+    # Запрос на вывод товаров по CMR - неактуальный запрос но пусть висит!!!!!!!!
+    # /api/v1/products/by-cmr/{cmr_number}/
+    @action(detail=False, methods=['get'], url_path='by-cmr/(?P<cmr_number>[^/.]+)')
+    def list_by_cmr(self, request, cmr_number=None):
+        products = Product.objects.select_related('doc', 'place').filter(
+            doc__doc_number=cmr_number)
+        data = []
+        for product in products:
+            data.append({
+                'sku_product': product.sku_product,
+                'description': product.description,
+                'gross_weight': product.gross_weight,
+                'quantity_total': product.quantity,
+                'quantity_dispatched': product.quantity_dispatched,
+                'quantity_remaining': product.quantity - product.quantity_dispatched,
+                'place': product.place.description,
+                'vehicle_number': product.carrier.vehicle_number if product.carrier else None,
+                'datetime_out': product.datetime_out,
+                'cmr': product.doc.doc_number if product.doc else None
+            })
+        return Response(data)
+
+
+    # Поиск товаров и паллетов по Id документа
+    # /api/v1/products/by-doc/?doc_id=<id>
+    @action(detail=False, methods=['get'], url_path='by-doc')
+    def get_by_doc(self, request):
+        doc_id = request.query_params.get('doc_id')
+        if not doc_id:
+            return Response({"products": [], "pallets": []}, status=status.HTTP_200_OK)
+
+        products = Product.objects.filter(doc_id=doc_id)
+        if not products.exists():
+            return Response({"products": [], "pallets": []}, status=status.HTTP_200_OK)
+
+        pallet_products = defaultdict(list)
+        standalone_products = []
+
+        for product in products:
+            if product.pallet:
+                pallet_products[product.pallet.id].append(ProductSerializer(product).data)
+            else:
+                standalone_products.append(ProductSerializer(product).data)
+
+        pallets_data = []
+        for pallet_id, items in pallet_products.items():
+            pallet = Pallet.objects.get(id=pallet_id)
+            pallet_info = PalletSerializer(pallet).data
+            pallet_info["products"] = items  # Включаем товары внутрь pallet_info
+            pallets_data.append(pallet_info)
+
+        return Response({
+            "products": standalone_products,
+            "pallets": pallets_data
+        })
+
+
+# Паллеты
+class PalletViewSet(ModelViewSet):
+    queryset = Pallet.objects.all()
+    serializer_class = PalletSerializer
+    pagination_class = AllOtherAPIListPagination
+    permission_classes = [IsAuthenticated]
+
+    # Скачивание в PDF штрихкода паллета
+    # http://127.0.0.1:8000/api/v1/pallets/1/generate-pdf/
+    @action(detail=True, methods=['get'], url_path='generate-pdf')
+    def generate_pdf_label_pallet(self, request, pk=None):
+        pallet = self.get_object()
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="label_pallet_{pallet.sku_pallet}.pdf"'
+
+        p = canvas.Canvas(response, pagesize=A4)
+        p.drawString(20 * mm, 270 * mm, f'Паллет: {pallet.description}')
+        p.drawString(20 * mm, 260 * mm, f'ITF-14: {pallet.sku_pallet}')
+        if pallet.barcode_image:
+            p.drawImage(pallet.barcode_image.path, 20 * mm, 200 * mm, width=80 * mm, height=80 * mm)
+        p.showPage()
+        p.save()
+        return response
+
+    # Поиск паллеты по штрихкоду
+    # GET /api/v1/pallets/by-barcode/{штрихкод}
+    @action(detail=False, methods=['get'], url_path='by-barcode/(?P<barcode>[^/.]+)')
+    def get_by_barcode(self, request, barcode=None):
+        pallet = Pallet.objects.filter(sku_pallet=barcode).first()
+        if pallet:
+            serializer = self.get_serializer(pallet)
+            return Response(serializer.data)
+        return Response({'error': 'Паллет не найден'}, status=status.HTTP_404_NOT_FOUND)
+
 
 
 # Рампа
@@ -837,11 +1044,21 @@ class NoticeViewSet(AuditLogMixin, ModelViewSet):
 
 
 # Документ
-class DocViewSet(ModelViewSet):
+class DocViewSet(MultiFieldFilterMixin, ModelViewSet):
     queryset = Doc.objects.all()
     serializer_class = DocSerializer
     pagination_class = AllOtherAPIListPagination
     permission_classes = [IsAuthenticated]
+
+
+    # Поиск через миксин вместо нижнего запроса def get_docs_by_order
+    # exact_filter_fields = ['notice__order_id']  # Добавляем фильтрацию по order_id через notice
+    #
+    # def get_queryset(self):
+    #     """
+    #     Переопределяем queryset для фильтрации по order_id через notice.
+    #     """
+    #     return self.filter_by_fields(self.request, super().get_queryset())
 
     def create(self, request, *args, **kwargs):
         """
@@ -855,6 +1072,19 @@ class DocViewSet(ModelViewSet):
         response_data = serializer.data
         response_data['notice_id'] = doc.notice.id  # Добавляем поле notice_id
         return Response(response_data, status=status.HTTP_201_CREATED)
+
+
+
+    # Получение документов по id заказа
+    # /api/v1/docs/by-order/123/
+    @action(detail=False, methods=['get'], url_path='by-order/(?P<order_id>\d+)')
+    def get_docs_by_order(self, request, order_id=None):
+        """
+        Получить список документов (Doc) по order_id через связь Notice.
+        """
+        docs = Doc.objects.filter(notice__order_id=order_id)
+        serializer = self.get_serializer(docs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 
@@ -1054,6 +1284,7 @@ class DirectoryView(APIView):
             'type_ts_choises': TRANSPORT_TYPE_CHOICES,
             'direction_types': DIRECTION_TYPES,
             'status_order': STATUS_ORDER,
+            'tip_vid_doc': TYPE_VID_DOC,
 
 
         }

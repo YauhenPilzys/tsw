@@ -50,8 +50,17 @@ class WarehouseUpdateSerializer(serializers.ModelSerializer):
 
 # Товар
 class ProductSerializer(serializers.ModelSerializer):
+    sku_product = serializers.CharField(required=False)
     class Meta:
         model = Product
+        fields = '__all__'
+
+
+# Паллет
+class PalletSerializer(serializers.ModelSerializer):
+    sku_pallet = serializers.CharField(required=False)
+    class Meta:
+        model = Pallet
         fields = '__all__'
 
 
